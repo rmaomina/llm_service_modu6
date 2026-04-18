@@ -1,0 +1,55 @@
+name: Clean Notebook Metadata
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.ipynb'
+
+permissions:
+  contents: write
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    if: github.actor != 'github-actions[bot]'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - name: Remove broken widgets metadata
+        run: |
+          python3 <<'EOF'
+          import json, glob, sys
+          changed = []
+          for path in glob.glob('**/*.ipynb', recursive=True):
+              try:
+                  with open(path) as f:
+                      nb = json.load(f)
+              except Exception as e:
+                  print(f"skip {path}: {e}")
+                  continue
+              md = nb.get('metadata', {})
+              if 'widgets' in md:
+                  del md['widgets']
+                  with open(path, 'w') as f:
+                      json.dump(nb, f, ensure_ascii=False, indent=1)
+                  changed.append(path)
+          if changed:
+              print("cleaned:")
+              for p in changed:
+                  print(f"  {p}")
+          else:
+              print("no changes")
+          EOF
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [[ -n $(git status --porcelain) ]]; then
+            git add -A
+            git commit -m "Auto-clean widgets metadata"
+            git push
+          fi
